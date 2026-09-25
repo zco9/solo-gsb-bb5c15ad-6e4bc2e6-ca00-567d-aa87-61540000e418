@@ -364,6 +364,7 @@ module.exports = {
   cmpSolutions,
   cmpIdxs,
   naturalCmp,
+  makeFrac,
   parseTarget,
   parseTolerance,
   validateGears,
