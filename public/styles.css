@@ -274,3 +274,22 @@ table.pairs th { background: #f0f2f5; font-weight: 600; }
 }
 
 .block-title { font-size: 14px; margin: 16px 0 8px; }
+
+/* ---------------- 双档换速 ---------------- */
+
+.fixed-panel {
+  border: 1px solid var(--brand);
+  background: var(--accent);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-top: 12px;
+}
+.fixed-panel .block-title { margin-top: 0; color: var(--brand-dark); }
+.stage-arrow {
+  align-self: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--brand-dark);
+}
+.fixed-panel .chip-list { align-items: center; }
+.fixed-panel .muted { margin: 0; align-self: center; }

@@ -17,6 +17,11 @@
 判断每个子集下两台能否在齿轮不复用时同时达标装配，并给出唯一采购建议
 （购买枚数最少 → 总价最低 → 购买编号自然序）。
 
+并支持**双档换速装配**：输入 4～12 枚齿轮与两个档位各自的目标速比、容差，
+两档都要求**恰好两级**传动，且共用同一有向齿轮对作为**固定第一级**、第二级换装；
+按第二级主动/从动轴位中**需更换的数量最少 → 两档相对误差之和最小 → 齿轮编号自然序**
+给出唯一方案，并列出四个轴位（固定级两轴 + 换装级两轴）各档所用齿轮与是否需要更换。
+
 ## 一键启动（Docker Compose，自动安装依赖并构建）
 
 ```bash
@@ -29,6 +34,7 @@ docker compose up --build
 | --- | --- |
 | 单台选配 | **http://localhost:3000/** |
 | 批量装配（2～3 台） | **http://localhost:3000/batch**（或 `/batch.html`） |
+| 双档换速（两档各两级） | **http://localhost:3000/dual-speed**（或 `/dual-speed.html`） |
 | 缺齿补货采购建议（2 台） | **http://localhost:3000/procure**（或 `/procure.html`） |
 
 后台运行可用 `docker compose up --build -d`，停止用 `docker compose down`。
@@ -43,6 +49,7 @@ npm start
 ```
 
 访问 http://localhost:3000 ，批量装配页 http://localhost:3000/batch ，
+双档换速页 http://localhost:3000/dual-speed ，
 缺齿补货页 http://localhost:3000/procure 。
 
 ## 必要配置（环境变量）
@@ -52,8 +59,9 @@ npm start
 | `PORT` | 容器内服务监听端口（一般无需修改） | `3000` |
 | `APP_PORT` | Compose 映射到宿主机的端口，按需覆盖，例如 `APP_PORT=8080 docker compose up --build` | `3000` |
 
-两个变量控制同一服务端口，三个页面共用；例如改用宿主机 8080 端口后，访问
-http://localhost:8080 （单台）、http://localhost:8080/batch （批量）与
+两个变量控制同一服务端口，四个页面共用；例如改用宿主机 8080 端口后，访问
+http://localhost:8080 （单台）、http://localhost:8080/batch （批量）、
+http://localhost:8080/dual-speed （双档换速）与
 http://localhost:8080/procure （缺齿补货）：
 
 ```bash
@@ -119,6 +127,34 @@ APP_PORT=8080 docker compose up --build
 
 子集内部两台的具体配对方案，则完全沿用**批量装配**的分配与择优规则
 （总级数最少 → 相对误差之和最小 → 装置顺序与编号自然序）。
+
+## 使用说明 — 双档换速
+
+1. 在顶部导航进入 **双档换速**（`/dual-speed`）。
+2. 录入 **4～12 枚齿轮**（编号唯一、正整数齿数，规则同前几个页面）。
+3. 填写 **2 个档位**各自的名称（可空，默认“装置 1/2”）、**目标速比**与**容差**。
+4. 点击“开始双档选配”，系统在完整两级达标候选上：
+   - 为每个档位枚举**恰好两级**、每档内 4 枚齿轮互不复用的全部达标装配；
+   - 只保留两档**共用同一有向齿轮对作为固定第一级**（主动轮、从动轮及其朝向都相同）
+     的装配组合，第二级可换装；
+   - 两档互斥运行、不同时工作，因此换装级允许与另一档第二级（甚至固定级）
+     使用相同实物齿轮。
+5. 结果区展示：
+   - **固定第一级**（两档共用、不拆卸）及其本级速比；
+   - 两个档位各自的两级配对（标注“固定 / 换装”）、实际总速比与相对误差；
+   - **轴位更换情况表**：逐轴位列出两档所装齿轮，并标出换档时哪些轴位需要更换。
+6. **无任何共用固定第一级的达标装配**时明确提示无解；若某一档本身不存在两级达标配对，
+   会单独指出该档的瓶颈。
+
+### 双档换速决胜规则
+
+在“两档均恰好两级达标且共用同一有向第一级”的全部装配中，按以下顺序选出**唯一**方案：
+
+1. **第二级主动、从动两个轴位中需更换的数量最少**（0、1、2；固定级两轴恒不更换；
+   轴位上所装齿轮编号不同即计为需更换）；
+2. 并列时**两档相对误差之和最小**（精确分数相加比较）；
+3. 再并列时按齿轮**编号自然序**决胜：先固定级 (主动, 从动)，
+   再依次比较第 1 档、第 2 档第二级的 (主动, 从动)（`G2` 排在 `G10` 之前）。
 
 ## HTTP 接口
 
@@ -202,6 +238,41 @@ APP_PORT=8080 docker compose up --build
 - 速比、容差与齿轮规则与 `/api/batch` 完全一致（1～3 级、齿轮不复用、精确分数判定）；
   每个子集都在完整达标候选上做分配，**不**受单台接口 300 条返回上限影响。
 
+### `POST /api/dual-speed`（双档换速）
+
+```json
+{
+  "gears": [
+    { "id": "G1", "teeth": 10 },
+    { "id": "G3", "teeth": 15 },
+    { "id": "G4", "teeth": 20 },
+    { "id": "G5", "teeth": 30 },
+    { "id": "G8", "teeth": 60 }
+  ],
+  "devices": [
+    { "name": "低速档", "target": "1/12", "tolerance": "5%" },
+    { "name": "高速档", "target": "1/9", "tolerance": "5%" }
+  ]
+}
+```
+
+- `gears` 必须 **4～12** 枚；`devices` 必须恰好 **2** 档（`name` 可省略，默认“装置 1/2”）。
+- 与其他接口不同，两档都固定为**恰好两级**，且两档第一级必须是同一有向齿轮对；
+  每档内 4 枚齿轮不得复用，两档互斥运行，换装级允许使用相同实物齿轮。
+- 有解时返回：
+  - `feasible: true`、`gearCount`、`candidateCount`（共用固定第一级的达标装配总数）；
+  - `replacementCount`：第二级主动/从动轴位中需更换的数量（0～2）；
+  - `errorSum`（+ `errorSumPercent`）：两档相对误差之和；
+  - `fixedStage`：固定第一级的主动轮、从动轮与本级速比；
+  - `devices[]`：逐档给出 `target`、`tolerance`、`twoStageMatchCount`
+    （该档两级达标配对总数）与 `solution`（两级结构同单台结果，级序固定为
+    “第一级固定 → 第二级换装”）；
+  - `shafts[]`：四个轴位（`fixed-drive`、`fixed-driven`、`second-drive`、
+    `second-driven`）各自两档所装齿轮及 `changed`（换档时是否需更换）。
+- 无解时返回 `feasible: false` 与明确的 `message`；逐档 `hasTwoStageMatch` /
+  `twoStageMatchCount` 用于区分“某档本身无两级达标配对”与“有配对但无共用固定第一级”。
+- 判定全程使用精确分数（BigInt），输入校验（速比/容差/编号/齿数）与现有接口完全一致。
+
 ## 计算与排序规则
 
 - 每级转速比 = 主动轮齿数 / 从动轮齿数；总速比 = 各级速比之积（全程约分分数）。
@@ -218,16 +289,19 @@ APP_PORT=8080 docker compose up --build
 ├── docker-compose.yml      # 一键启动服务（单台页与批量页同端口）
 ├── package.json
 ├── src
-│   ├── server.js           # Express 服务：静态页面 + /api/search + /api/batch + /api/procure
+│   ├── server.js           # Express 服务：静态页面 + /api/search + /api/batch + /api/procure + /api/dual-speed
 │   ├── search.js           # 精确分数搜索算法（BigInt）：完整枚举与单台搜索
 │   ├── batch.js            # 批量装配：按集合留优 + 互不冲突组合的分支限界搜索
 │   └── procure.js          # 缺齿补货：枚举可购子集，复用批量装配的候选分配与规则
+│   └── dual-speed.js       # 双档换速：两级列车按共用固定第一级配对，换装轴位最少决胜
 └── public
     ├── index.html          # 单台选配页面
     ├── batch.html          # 批量装配页面（/batch）
+    ├── dual-speed.html     # 双档换速页面（/dual-speed）
     ├── procure.html        # 缺齿补货采购建议页面（/procure）
     ├── styles.css
     ├── app.js              # 单台页脚本
     ├── batch.js            # 批量页脚本
+    ├── dual-speed.js       # 双档换速页脚本
     └── procure.js          # 补货页脚本
 ```

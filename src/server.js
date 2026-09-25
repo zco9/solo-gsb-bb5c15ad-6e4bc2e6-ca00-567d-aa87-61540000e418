@@ -17,6 +17,11 @@ const {
   MAX_EXISTING,
   MAX_TOTAL_GEARS,
 } = require('./procure');
+const {
+  planDualSpeed,
+  MIN_DUAL_GEARS,
+  MAX_DUAL_GEARS,
+} = require('./dual-speed');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -32,6 +37,11 @@ app.get('/batch', (_req, res) => {
 /** 友好访问缺齿补货采购建议页：/procure → /procure.html */
 app.get('/procure', (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'procure.html'));
+});
+
+/** 友好访问双档换速页：/dual-speed → /dual-speed.html */
+app.get('/dual-speed', (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'dual-speed.html'));
 });
 
 /** BigInt 分数安全转为有限小数（用于前端展示） */
@@ -261,9 +271,83 @@ app.post('/api/procure', (req, res) => {
   });
 });
 
+app.post('/api/dual-speed', (req, res) => {
+  const body = req.body || {};
+
+  // 齿轮：4～12 枚（两档各需两级、每级两轮）
+  const checked = validateGears(body.gears, {
+    min: MIN_DUAL_GEARS,
+    max: MAX_DUAL_GEARS,
+  });
+  if (!checked.ok) return res.status(400).json({ error: checked.error });
+
+  // 固定 2 个档位（各自目标速比与容差）
+  const parsed = parseDevices(body.devices, { min: 2, max: 2 });
+  if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+  const devices = parsed.devices;
+
+  const result = planDualSpeed(checked.gears, devices);
+
+  const deviceMeta = devices.map((d) => ({
+    name: d.name,
+    target: serializeFrac(d.target),
+    tolerance: serializeFrac(d.tolerance),
+  }));
+
+  if (!result.feasible) {
+    const blocked = devices
+      .map((d, i) => (result.twoStageMatchCounts[i] === 0 ? d.name : null))
+      .filter(Boolean);
+    const reason =
+      blocked.length > 0
+        ? `其中 ${blocked.join('、')} 在 4～12 枚齿轮、每枚齿轮每档至多使用一次的限制下，` +
+          '不存在任何“恰好两级”的误差达标配对，可尝试放宽容差、调整目标速比或增加齿轮。'
+        : '两个档位各自都存在两级达标配对，但找不到共用同一有向第一级齿轮对的装配，' +
+          '可尝试放宽容差、调整目标速比或增加齿轮。';
+    return res.json({
+      feasible: false,
+      gearCount: result.gearCount,
+      candidateCount: 0,
+      devices: deviceMeta.map((d, i) => ({
+        ...d,
+        hasTwoStageMatch: result.twoStageMatchCounts[i] > 0,
+        twoStageMatchCount: result.twoStageMatchCounts[i],
+      })),
+      message:
+        '不存在满足全部约束的双档换速装配：两档均须恰好两级、共用同一有向齿轮对作为固定第一级，' +
+        '且每档内齿轮不得复用。' + reason,
+    });
+  }
+
+  res.json({
+    feasible: true,
+    gearCount: result.gearCount,
+    candidateCount: result.candidateCount,
+    replacementCount: result.replacementCount,
+    errorSum: serializeFrac(result.errorSum),
+    errorSumPercent: fracToDecimal(
+      { num: result.errorSum.num * 100n, den: result.errorSum.den },
+      6,
+    ),
+    fixedStage: {
+      drive: result.fixedStage.drive,
+      driven: result.fixedStage.driven,
+      stageRatio: serializeFrac(result.fixedStage.stageRatio),
+    },
+    shafts: result.shafts,
+    devices: deviceMeta.map((d, i) => ({
+      ...d,
+      hasTwoStageMatch: true,
+      twoStageMatchCount: result.twoStageMatchCounts[i],
+      solution: serializeSolution(result.solutions[i]),
+    })),
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`齿轮组选配服务已启动： http://localhost:${PORT}`);
   console.log(`  单台选配： http://localhost:${PORT}/`);
   console.log(`  批量装配： http://localhost:${PORT}/batch`);
   console.log(`  缺齿补货： http://localhost:${PORT}/procure`);
+  console.log(`  双档换速： http://localhost:${PORT}/dual-speed`);
 });
